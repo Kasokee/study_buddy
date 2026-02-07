@@ -1,9 +1,9 @@
 <?php
 // User data from session
-$userData = $_SESSION['user'] ?? [
-    'first_name' => 'Unknown',
-    'last_name' => 'User',
-    'email' => 'loading...'
+$userData = [
+    'first_name' => $_SESSION['first_name'] ?? 'Unknown',
+    'last_name' => $_SESSION['last_name'] ?? 'User',
+    'email' => $_SESSION['email'] ?? 'loading...'
 ];
 
 // Combine first and last name
@@ -25,10 +25,7 @@ if (!function_exists('getInitials')) {
 // Navigation items
 $navItems = [
     ['name' => 'Dashboard', 'icon' => 'bi-speedometer2', 'route' => 'dashboard.php'],
-    ['name' => 'Review Permit', 'icon' => 'bi-file-earmark-check', 'route' => '#'],
-    ['name' => 'Log Inventory', 'icon' => 'bi-journal-plus', 'route' => '#'],
-    ['name' => 'Chats', 'icon' => 'bi-chat-dots', 'route' => '#'],
-    ['name' => 'Users', 'icon' => 'bi-people', 'route' => '#'],
+    ['name' => 'Book Session', 'icon' => 'bi bi-bookmark-check', 'route' => '#'],
 ];
 
 $pageItems = [

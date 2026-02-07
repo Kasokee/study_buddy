@@ -12,7 +12,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $error = 'Please fill in all fields.';
     } else {
         // Prepare statement safely
-        $stmt = $conn->prepare("SELECT id, first_name, last_name, email, password, role FROM users WHERE email = ?");
+        $stmt = $conn->prepare("SELECT id, first_name, last_name, email, password, role, status FROM users WHERE email = ?");
         if (!$stmt) {
             $error = "Database query failed: (" . $conn->errno . ") " . $conn->error;
         } else {
@@ -23,6 +23,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($result->num_rows === 1) {
                 $user = $result->fetch_assoc();
                 if (password_verify($password, $user['password'])) {
+                    
+                    $base_url = "http://localhost/studybuddy/";
+                    // Pending tutor check
+                    if ($user['role'] === 'tutor' && $user['status'] === 'pending') {
+                        // Set session variables anyway
+                        $_SESSION['user_id'] = $user['id'];
+                        $_SESSION['first_name'] = $user['first_name'];
+                        $_SESSION['last_name'] = $user['last_name'];
+                        $_SESSION['email'] = $user['email'];
+                        $_SESSION['role'] = $user['role'];
+
+                        // Redirect to pending notice page
+                        header('Location: tutor/pending.php'); // You can change folder if needed
+                        exit;
+                    }
+
                     // Set session variables
                     $_SESSION['user_id'] = $user['id'];
                     $_SESSION['first_name'] = $user['first_name'];
@@ -30,8 +46,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $_SESSION['email'] = $user['email'];
                     $_SESSION['role'] = $user['role'];
 
-                    // Redirect to dashboard based on role (fixed)
-                    $base_url = "http://localhost/studybuddy/"; // full URL to project root
+                    // Redirect to dashboard based on role
+                    
                     switch ($user['role']) {
                         case 'student':
                             header('Location: ' . $base_url . 'student/dashboard.php');
@@ -43,6 +59,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             header('Location: ' . $base_url . 'admin/dashboard.php');
                             exit;
                     }
+
                 } else {
                     $error = 'Invalid email or password.';
                 }
@@ -188,3 +205,5 @@ include 'includes/header.php';
     </div> <!-- end flex-grow -->
 
 </div> <!-- end flex flex-col -->
+
+<?php include 'includes/footer.php'; ?>

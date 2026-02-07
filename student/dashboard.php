@@ -152,7 +152,7 @@ $bookings = $myBookings->get_result();
                             </h3>
                         </div>
                         <div class="text-slate-300">
-                            <i class="bi bi-calendar-check text-3xl"></i>
+                            <i class="bi bi-calendar-check text-3xl "></i>
                         </div>
                     </div>
                 </div>

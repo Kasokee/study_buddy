@@ -18,12 +18,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     // ----- RECAPTCHA VALIDATION -----
     $recaptcha_response = $_POST['g-recaptcha-response'] ?? '';
-    $recaptcha_secret = '6LcTOmMsAAAAAAY8D7YhF_ZtPtarB6wxTaELpNLx'; 
+    $recaptcha_secret = '6LcTOmMsAAAAAAY8D7YhF_ZtPtarB6wxTaELpNLx';
 
     if (!$recaptcha_response) {
         $error = 'Please complete the reCAPTCHA.';
     } else {
-        // Verify with Google
         $verify = file_get_contents("https://www.google.com/recaptcha/api/siteverify?secret={$recaptcha_secret}&response={$recaptcha_response}");
         $captcha_success = json_decode($verify);
 
@@ -44,7 +43,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } elseif ($role === 'tutor' && empty($subject)) {
             $error = 'Tutors must specify their subject.';
         } else {
-
             $stmt = $conn->prepare("SELECT id FROM users WHERE email = ?");
             $stmt->bind_param("s", $email);
             $stmt->execute();
@@ -54,19 +52,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             } else {
                 $hashed_password = password_hash($password, PASSWORD_DEFAULT);
                 $subjectVal = $role === 'tutor' ? $subject : null;
+                $status = ($role === 'tutor') ? 'pending' : 'approved';
 
                 $stmt = $conn->prepare(
-                    "INSERT INTO users (first_name, last_name, email, password, role, subject)
-                     VALUES (?, ?, ?, ?, ?, ?)"
+                    "INSERT INTO users (first_name, last_name, email, password, role, subject, status)
+                     VALUES (?, ?, ?, ?, ?, ?, ?)"
                 );
                 $stmt->bind_param(
-                    "ssssss",
+                    "sssssss",
                     $first_name,
                     $last_name,
                     $email,
                     $hashed_password,
                     $role,
-                    $subjectVal
+                    $subjectVal,
+                    $status
                 );
 
                 if ($stmt->execute()) {
