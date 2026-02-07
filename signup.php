@@ -1,5 +1,6 @@
 <?php
 require_once 'config/database.php';
+require_once 'config/mail.php'; // PHPMailer SMTP for Brevo
 
 $error = '';
 $old = [];
@@ -23,7 +24,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!$recaptcha_response) {
         $error = 'Please complete the reCAPTCHA.';
     } else {
-        $verify = file_get_contents("https://www.google.com/recaptcha/api/siteverify?secret={$recaptcha_secret}&response={$recaptcha_response}");
+        $verify = file_get_contents(
+            "https://www.google.com/recaptcha/api/siteverify?secret={$recaptcha_secret}&response={$recaptcha_response}"
+        );
         $captcha_success = json_decode($verify);
 
         if (!$captcha_success->success) {
@@ -70,12 +73,36 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 );
 
                 if ($stmt->execute()) {
-                    redirect('login.php?success=registered');
+                    $userId = $stmt->insert_id;
+
+                    // Generate OTP
+                    $otp = rand(100000, 999999);
+                    $expires = date('Y-m-d H:i:s', strtotime('+10 minutes'));
+
+                    // Save OTP
+                    $stmtOtp = $conn->prepare(
+                        "UPDATE users SET otp_code = ?, otp_expires = ? WHERE id = ?"
+                    );
+                    $stmtOtp->bind_param("ssi", $otp, $expires, $userId);
+                    $stmtOtp->execute();
+                    $stmtOtp->close();
+
+                    // ---------- SEND OTP VIA PHPMailer (Brevo SMTP) ----------
+                    if (!sendOTP($email, $otp)) {
+                        $error = 'Failed to send OTP. Please try again.';
+                        return;
+                    }
+
+                    // Save email for verification page
+                    session_start();
+                    $_SESSION['verify_email'] = $email;
+
+                    header('Location: verify-otp.php');
+                    exit;
                 } else {
                     $error = 'Registration failed. Please try again.';
                 }
             }
-
             $stmt->close();
         }
     }

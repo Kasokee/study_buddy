@@ -11,52 +11,53 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (empty($email) || empty($password)) {
         $error = 'Please fill in all fields.';
     } else {
-        // Prepare statement safely
-        $stmt = $conn->prepare("SELECT id, first_name, last_name, email, password, role, status FROM users WHERE email = ?");
+
+        $stmt = $conn->prepare(
+            "SELECT id, first_name, last_name, email, password, role, status 
+             FROM users WHERE email = ?"
+        );
+
         if (!$stmt) {
-            $error = "Database query failed: (" . $conn->errno . ") " . $conn->error;
+            $error = "Database query failed.";
         } else {
+
             $stmt->bind_param("s", $email);
             $stmt->execute();
             $result = $stmt->get_result();
 
             if ($result->num_rows === 1) {
                 $user = $result->fetch_assoc();
-                if (password_verify($password, $user['password'])) {
-                    
-                    $base_url = "http://localhost/studybuddy/";
-                    // Pending tutor check
-                    if ($user['role'] === 'tutor' && $user['status'] === 'pending') {
-                        // Set session variables anyway
-                        $_SESSION['user_id'] = $user['id'];
-                        $_SESSION['first_name'] = $user['first_name'];
-                        $_SESSION['last_name'] = $user['last_name'];
-                        $_SESSION['email'] = $user['email'];
-                        $_SESSION['role'] = $user['role'];
 
-                        // Redirect to pending notice page
-                        header('Location: tutor/pending.php'); // You can change folder if needed
+                if (password_verify($password, $user['password'])) {
+
+                    // Session data
+                    $_SESSION['user_id']    = $user['id'];
+                    $_SESSION['first_name'] = $user['first_name'];
+                    $_SESSION['last_name']  = $user['last_name'];
+                    $_SESSION['email']      = $user['email'];
+                    $_SESSION['role']       = $user['role'];
+
+                    // login success flag (for toast later)
+                    $_SESSION['login_success'] = true;
+
+                    $base_url = "http://localhost/studybuddy/";
+
+                    // ⏳ Pending tutor
+                    if ($user['role'] === 'tutor' && $user['status'] === 'pending') {
+                        header("Location: {$base_url}tutor/pending.php");
                         exit;
                     }
 
-                    // Set session variables
-                    $_SESSION['user_id'] = $user['id'];
-                    $_SESSION['first_name'] = $user['first_name'];
-                    $_SESSION['last_name'] = $user['last_name'];
-                    $_SESSION['email'] = $user['email'];
-                    $_SESSION['role'] = $user['role'];
-
-                    // Redirect to dashboard based on role
-                    
+                    // Redirect by role
                     switch ($user['role']) {
                         case 'student':
-                            header('Location: ' . $base_url . 'student/dashboard.php');
+                            header("Location: {$base_url}student/dashboard.php");
                             exit;
                         case 'tutor':
-                            header('Location: ' . $base_url . 'tutor/dashboard.php');
+                            header("Location: {$base_url}tutor/dashboard.php");
                             exit;
                         case 'admin':
-                            header('Location: ' . $base_url . 'admin/dashboard.php');
+                            header("Location: {$base_url}admin/dashboard.php");
                             exit;
                     }
 
@@ -66,6 +67,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             } else {
                 $error = 'Invalid email or password.';
             }
+
             $stmt->close();
         }
     }
@@ -102,42 +104,32 @@ include 'includes/header.php';
 
                         <!-- Email -->
                         <div>
-                            <label for="email" class="block text-sm font-medium text-gray-900">
+                            <label class="block text-sm font-medium text-gray-900">
                                 Email address
                             </label>
-                            <div class="mt-2">
-                                <input
-                                    id="email"
-                                    name="email"
-                                    type="email"
-                                    placeholder="name@catsu.edu.ph"
-                                    required
-                                    class="block w-full rounded-md border border-gray-300
-                                           py-2 px-3 text-gray-900 shadow-sm
-                                           placeholder:text-gray-400
-                                           focus:outline-none focus:ring-0 focus:ring-offset-0
-                                           sm:text-sm">
-                            </div>
+                            <input
+                                name="email"
+                                type="email"
+                                placeholder="name@catsu.edu.ph"
+                                required
+                                class="mt-2 block w-full rounded-md border border-gray-300
+                                       py-2 px-3 text-gray-900 shadow-sm
+                                       focus:outline-none focus:ring-0 sm:text-sm">
                         </div>
 
                         <!-- Password -->
                         <div>
-                            <label for="password" class="block text-sm font-medium text-gray-900">
+                            <label class="block text-sm font-medium text-gray-900">
                                 Password
                             </label>
-                            <div class="mt-2">
-                                <input
-                                    id="password"
-                                    name="password"
-                                    type="password"
-                                    placeholder="•••••"
-                                    required
-                                    class="block w-full rounded-md border border-gray-300
-                                           py-2 px-3 text-gray-900 shadow-sm
-                                           placeholder:text-gray-400
-                                           focus:outline-none focus:ring-0 focus:ring-offset-0
-                                           sm:text-sm">
-                            </div>
+                            <input
+                                name="password"
+                                type="password"
+                                placeholder="•••••"
+                                required
+                                class="mt-2 block w-full rounded-md border border-gray-300
+                                       py-2 px-3 text-gray-900 shadow-sm
+                                       focus:outline-none focus:ring-0 sm:text-sm">
                         </div>
 
                         <!-- Remember / Forgot -->
@@ -173,18 +165,14 @@ include 'includes/header.php';
                             </div>
                         </div>
 
-                        <!-- Social -->
-                        <div class="mt-6 grid grid-cols-2 gap-4">
-                            <button class="flex items-center justify-center gap-2 rounded-md border
-                                           py-2 text-sm font-medium hover:bg-gray-50">
+                        <!-- Google (KEPT) -->
+                        <div class="mt-6 gap-4">
+                            <button
+                                class="flex items-center justify-center gap-2 rounded-md border
+                                       py-2 text-sm font-medium hover:bg-gray-50
+                                       w-full transition">
                                 <img src="https://www.svgrepo.com/show/475656/google-color.svg" class="h-5 w-5">
-                                Google
-                            </button>
-
-                            <button class="flex items-center justify-center gap-2 rounded-md border
-                                           py-2 text-sm font-medium hover:bg-gray-50">
-                                <img src="https://www.svgrepo.com/show/512317/github-142.svg" class="h-5 w-5">
-                                GitHub
+                                Continue with Google
                             </button>
                         </div>
                     </div>
@@ -202,8 +190,7 @@ include 'includes/header.php';
 
         </div>
 
-    </div> <!-- end flex-grow -->
-
-</div> <!-- end flex flex-col -->
+    </div>
+</div>
 
 <?php include 'includes/footer.php'; ?>
