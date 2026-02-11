@@ -9,10 +9,10 @@ include 'includes/header.php';
         <h1 class="display-4 fw-bold mb-3">Welcome to StudyBuddy</h1>
         <p class="lead mb-4">Find peer tutors, book sessions, and improve your grades &mdash; all in one place.</p>
         <?php if (!isset($_SESSION['user_id'])): ?>
-            <a href="signup.php" class="btn btn-warning btn-lg me-2 mb-2">
+            <a href="auth/signup.php" class="btn btn-warning btn-lg me-2 mb-2">
                 <i class="bi bi-person-plus"></i> Get Started
             </a>
-            <a href="login.php" class="btn btn-outline-light btn-lg mb-2">
+            <a href="auth/login.php" class="btn btn-outline-light btn-lg mb-2">
                 <i class="bi bi-box-arrow-in-right"></i> Login
             </a>
         <?php else: ?>
