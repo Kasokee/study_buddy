@@ -1,6 +1,6 @@
 <?php
 session_start();
-require_once 'config/database.php';
+require_once '../config/database.php';
 
 $error = '';
 
@@ -41,7 +41,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 $pageTitle = "Verify OTP - StudyBuddy";
-include 'includes/header.php';
+include '../includes/header.php';
 ?>
 
 <div class="flex items-center justify-center min-h-[calc(100vh-140px)] bg-gray-50">
@@ -123,4 +123,4 @@ function combineOTP() {
 }
 </script>
 
-<?php include 'includes/footer.php'; ?>
+<?php include '../includes/footer.php'; ?>

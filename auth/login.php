@@ -166,7 +166,7 @@ include '../includes/header.php';
                         </div>
 
                         <!-- Google (KEPT) -->
-                         <a href="google-login.php" class="flex items-center justify-center gap-2 rounded-md border py-2 text-sm font-medium hover:bg-gray-50 w-full transition">
+                         <a href="google-login.php" class="flex items-center justify-center gap-2 rounded-md border mt-1 py-2 text-sm font-medium hover:bg-gray-50 w-full transition">
                             <img src="https://www.svgrepo.com/show/475656/google-color.svg" class="h-5 w-5">
                             Continue with Google
                          </a>

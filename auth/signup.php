@@ -140,8 +140,8 @@ include '../includes/header.php';
                         <div>
                             <label class="block text-sm font-medium text-gray-900">First name</label>
                             <input name="first_name" type="text" placeholder="Juan" required
-                                   value="<?php echo htmlspecialchars($old['first_name'] ?? ''); ?>"
-                                   class="mt-2 block w-full rounded-md border border-gray-300
+                                value="<?php echo htmlspecialchars($old['first_name'] ?? ''); ?>"
+                                class="mt-2 block w-full rounded-md border border-gray-300
                                           py-2 px-3 text-gray-900 shadow-sm
                                           focus:outline-none focus:ring-0 sm:text-sm">
                         </div>
@@ -149,8 +149,8 @@ include '../includes/header.php';
                         <div>
                             <label class="block text-sm font-medium text-gray-900">Last name</label>
                             <input name="last_name" type="text" placeholder="Tamad" required
-                                   value="<?php echo htmlspecialchars($old['last_name'] ?? ''); ?>"
-                                   class="mt-2 block w-full rounded-md border border-gray-300
+                                value="<?php echo htmlspecialchars($old['last_name'] ?? ''); ?>"
+                                class="mt-2 block w-full rounded-md border border-gray-300
                                           py-2 px-3 text-gray-900 shadow-sm
                                           focus:outline-none focus:ring-0 sm:text-sm">
                         </div>
@@ -160,8 +160,8 @@ include '../includes/header.php';
                     <div>
                         <label class="block text-sm font-medium text-gray-900">Email address</label>
                         <input name="email" type="email" placeholder="name@catsu.edu.ph" required
-                               value="<?php echo htmlspecialchars($old['email'] ?? ''); ?>"
-                               class="mt-2 block w-full rounded-md border border-gray-300
+                            value="<?php echo htmlspecialchars($old['email'] ?? ''); ?>"
+                            class="mt-2 block w-full rounded-md border border-gray-300
                                       py-2 px-3 text-gray-900 shadow-sm
                                       focus:outline-none focus:ring-0 sm:text-sm">
                     </div>
@@ -170,7 +170,7 @@ include '../includes/header.php';
                     <div>
                         <label class="block text-sm font-medium text-gray-900">I am a</label>
                         <select name="role" required onchange="toggleSubject()"
-                                class="mt-2 block w-full rounded-md border border-gray-300
+                            class="mt-2 block w-full rounded-md border border-gray-300
                                        py-2 px-3 text-gray-900 shadow-sm bg-white
                                        focus:outline-none focus:ring-0 sm:text-sm">
                             <option value="">Select your role</option>
@@ -185,13 +185,13 @@ include '../includes/header.php';
 
                     <!-- Subject -->
                     <div id="subjectField"
-                         style="display: <?php echo ($old['role'] ?? '') === 'tutor' ? 'block' : 'none'; ?>;">
+                        style="display: <?php echo ($old['role'] ?? '') === 'tutor' ? 'block' : 'none'; ?>;">
                         <label class="block text-sm font-medium text-gray-900">
                             Subject you tutor
                         </label>
                         <input name="subject" type="text"
-                               value="<?php echo htmlspecialchars($old['subject'] ?? ''); ?>"
-                               class="mt-2 block w-full rounded-md border border-gray-300
+                            value="<?php echo htmlspecialchars($old['subject'] ?? ''); ?>"
+                            class="mt-2 block w-full rounded-md border border-gray-300
                                       py-2 px-3 text-gray-900 shadow-sm
                                       focus:outline-none focus:ring-0 sm:text-sm">
                     </div>
@@ -199,20 +199,29 @@ include '../includes/header.php';
                     <!-- Password -->
                     <div>
                         <label class="block text-sm font-medium text-gray-900">Password</label>
-                        <input name="password" type="password" placeholder="•••••" required
-                               class="mt-2 block w-full rounded-md border border-gray-300
+                        <input id="password" name="password" type="password" placeholder="•••••" required
+                            class="mt-2 block w-full rounded-md border border-gray-300
                                       py-2 px-3 text-gray-900 shadow-sm
                                       focus:outline-none focus:ring-0 sm:text-sm">
+                    </div>
+                    <div class="mt-2">
+                        <div class="w-full bg-gray-200 rounded-full h-2">
+                            <div id="passwordStrengthBar" class="h-2 w-0 bg-red-500 transition-all"></div>
+                        </div>
+                        <p id="passwordStrengthText" class="mt-1 text-xs text-gray-600">
+                            Password strength
+                        </p>
                     </div>
 
                     <!-- Confirm Password -->
                     <div>
                         <label class="block text-sm font-medium text-gray-900">Confirm password</label>
-                        <input name="confirm_password" type="password" placeholder="•••••" required
-                               class="mt-2 block w-full rounded-md border border-gray-300
+                        <input id="confirm-password" name="confirm_password" type="password" placeholder="•••••" required
+                            class="mt-2 block w-full rounded-md border border-gray-300
                                       py-2 px-3 text-gray-900 shadow-sm
                                       focus:outline-none focus:ring-0 sm:text-sm">
                     </div>
+                    <p id="confirmPasswordText" class="mt-1 text-xs"></p>
 
                     <!-- Google reCAPTCHA -->
                     <div class="mt-4">
@@ -221,7 +230,7 @@ include '../includes/header.php';
 
                     <!-- Submit Button -->
                     <button type="submit"
-                            class="w-full rounded-md bg-indigo-600 py-2 text-sm font-semibold
+                        class="w-full rounded-md bg-indigo-600 py-2 text-sm font-semibold
                                    text-white shadow-sm hover:bg-indigo-500
                                    transition active:scale-[0.98] mt-4">
                         Create account
@@ -229,7 +238,7 @@ include '../includes/header.php';
                 </form>
             </div>
 
-            <p class="mt-10 text-center text-sm text-gray-500">
+            <p class="mt-8 mb-5 text-center text-sm text-gray-500">
                 Already have an account?
                 <a href="login.php" class="font-semibold text-indigo-600 hover:text-indigo-500">
                     Sign in
@@ -241,14 +250,15 @@ include '../includes/header.php';
 </div>
 
 <script>
-function toggleSubject() {
-    const role = document.querySelector('[name="role"]').value;
-    document.getElementById('subjectField').style.display =
-        role === 'tutor' ? 'block' : 'none';
-}
+    function toggleSubject() {
+        const role = document.querySelector('[name="role"]').value;
+        document.getElementById('subjectField').style.display =
+            role === 'tutor' ? 'block' : 'none';
+    }
 </script>
 
+<script src="../assets/js/password-strength.js"></script>  
 <!-- Load reCAPTCHA -->
 <script src="https://www.google.com/recaptcha/api.js" async defer></script>
 
-<?php include 'includes/footer.php'; ?>
+<?php include '../includes/footer.php'; ?>
