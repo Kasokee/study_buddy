@@ -3,7 +3,7 @@ session_start();
 require_once '../../config/database.php';
 
 if (!isset($_SESSION['google_signup'])) {
-    header("Location: login.php");
+    header("Location: auth/login.php");
     exit();
 }
 
@@ -57,6 +57,6 @@ if ($role === 'tutor') {
     // Redirect tutors to pending page until approved by admin
     header("Location: {$base_url}tutor/pending.php");
 } else {
-    header("Location: {$base_url}student/dashboard.php");
+    header("Location: {$base_url}tutor/dashboard.php");
 }
 exit();

@@ -1,340 +1,285 @@
 <?php
 require_once '../config/database.php';
-requireRole('student');
+requireRole('tutor');
 
-$student_id = $_SESSION['user_id'];
-
-$userData = $_SESSION['user'] ?? [
-    'name' => 'Unknown User',
-    'email' => 'loading...'
-];
-
-function getInitials($name) {
-    if (!$name) return '??';
-    $parts = explode(' ', $name);
-    $initials = '';
-    foreach ($parts as $p) {
-        $initials .= strtoupper($p[0]);
-    }
-    return $initials;
-}
+$tutor_id = $_SESSION['user_id'];
 
 /* -------------------
-   KPI COUNTS
+   HANDLE ACTIONS
 ------------------- */
-$stats = [
-    'total' => 0,
-    'pending' => 0,
-    'completed' => 0
-];
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $action = $_POST['action'] ?? '';
 
-$kpi = $conn->prepare("
-    SELECT 
-        COUNT(*) AS total,
-        COALESCE(SUM(status = 'pending'), 0) AS pending,
-        COALESCE(SUM(status = 'confirmed'), 0) AS completed
-    FROM bookings
-    WHERE student_id = ? AND status != 'cancelled'
-");
-$kpi->bind_param("i", $student_id);
-$kpi->execute();
-$row = $kpi->get_result()->fetch_assoc();
-if ($row) {
-    $stats = $row;
-}
-$kpi->close();
+    // ADD AVAILABILITY SLOT
+    if ($action === 'add_slot') {
+        $date = $_POST['date']; // full date
+        $start = $_POST['start_time'];
+        $end = $_POST['end_time'];
+        $mode = $_POST['mode']; // online / face_to_face / both
 
-/* -------------------
-   Handle Booking
-------------------- */
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'book') {
-    $schedule_id = (int)$_POST['schedule_id'];
-    $notes = sanitize($conn, $_POST['notes'] ?? '');
+        if (strtotime($start) >= strtotime($end)) {
+            $_SESSION['error'] = "Start time must be before end time.";
+            header("Location: dashboard.php");
+            exit;
+        }
 
-    $check = $conn->prepare("
-        SELECT id FROM bookings 
-        WHERE student_id = ? AND schedule_id = ? AND status != 'cancelled'
-    ");
-    $check->bind_param("ii", $student_id, $schedule_id);
-    $check->execute();
-
-    if ($check->get_result()->num_rows > 0) {
-        $_SESSION['msg'] = ['type' => 'warning', 'text' => 'You have already booked this session.'];
-    } else {
         $stmt = $conn->prepare("
-            INSERT INTO bookings (student_id, schedule_id, notes)
-            VALUES (?, ?, ?)
+            INSERT INTO schedules (tutor_id, available_day, start_time, end_time, mode)
+            VALUES (?, ?, ?, ?, ?)
         ");
-        $stmt->bind_param("iis", $student_id, $schedule_id, $notes);
-        $_SESSION['msg'] = $stmt->execute()
-            ? ['type' => 'success', 'text' => 'Session booked successfully!']
-            : ['type' => 'danger', 'text' => 'Failed to book session.'];
+        $stmt->bind_param("issss", $tutor_id, $date, $start, $end, $mode);
+        $stmt->execute();
         $stmt->close();
+
+        header("Location: dashboard.php");
+        exit;
     }
-    $check->close();
-    redirect('dashboard.php');
+
+    // CANCEL AVAILABILITY SLOT
+    if ($action === 'cancel_slot') {
+        $slot_id = (int)$_POST['slot_id'];
+        $stmt = $conn->prepare("DELETE FROM schedules WHERE id = ? AND tutor_id = ?");
+        $stmt->bind_param("ii", $slot_id, $tutor_id);
+        $stmt->execute();
+        $stmt->close();
+
+        header("Location: dashboard.php");
+        exit;
+    }
+
+    // ACCEPT OR DECLINE STUDENT BOOKING
+    if ($action === 'update_booking') {
+        $booking_id = (int)$_POST['booking_id'];
+        $status = $_POST['status'] === 'accepted' ? 'confirmed' : 'declined';
+        $stmt = $conn->prepare("
+            UPDATE bookings 
+            SET status=? 
+            WHERE id=? AND schedule_id IN (SELECT id FROM schedules WHERE tutor_id=?)
+        ");
+        $stmt->bind_param("sii", $status, $booking_id, $tutor_id);
+        $stmt->execute();
+        $stmt->close();
+
+        if (!isset($_POST['ajax'])) {
+            header("Location: dashboard.php");
+            exit;
+        } else {
+            echo json_encode(['status' => 'success']);
+            exit;
+        }
+    }
 }
 
 /* -------------------
-   Handle Cancel Booking
+   FETCH SLOTS
 ------------------- */
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'cancel') {
-    $booking_id = (int)$_POST['booking_id'];
-    $stmt = $conn->prepare("
-        UPDATE bookings 
-        SET status = 'cancelled'
-        WHERE id = ? AND student_id = ?
-    ");
-    $stmt->bind_param("ii", $booking_id, $student_id);
-    $stmt->execute();
-    $_SESSION['msg'] = ['type' => 'success', 'text' => 'Booking cancelled.'];
-    $stmt->close();
-    redirect('dashboard.php');
-}
+$slots = [];
+$res = $conn->prepare("SELECT * FROM schedules WHERE tutor_id = ? ORDER BY available_day, start_time");
+$res->bind_param("i", $tutor_id);
+$res->execute();
+$slots = $res->get_result()->fetch_all(MYSQLI_ASSOC);
+$res->close();
 
 /* -------------------
-   Fetch Tutors
+   FETCH UPCOMING PENDING BOOKINGS ONLY
 ------------------- */
-$tutors = $conn->query("
-    SELECT s.*, CONCAT(u.first_name,' ',u.last_name) AS tutor_name, u.subject
-    FROM schedules s
-    JOIN users u ON s.tutor_id = u.id
-    WHERE u.role = 'tutor'
-    ORDER BY tutor_name,
-    FIELD(s.available_day,'Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'),
-    s.start_time
-");
-
-/* -------------------
-   Fetch Bookings
-------------------- */
-$myBookings = $conn->prepare("
-    SELECT b.*, s.available_day, s.start_time, s.end_time,
-           CONCAT(u.first_name,' ',u.last_name) AS tutor_name, u.subject
+$bookings = [];
+$bk = $conn->prepare("
+    SELECT b.*, u.first_name, u.last_name, s.mode AS tutor_mode, s.available_day, s.start_time, s.end_time
     FROM bookings b
+    JOIN users u ON b.student_id = u.id
     JOIN schedules s ON b.schedule_id = s.id
-    JOIN users u ON s.tutor_id = u.id
-    WHERE b.student_id = ?
+    WHERE s.tutor_id = ? AND b.status = 'pending'
     ORDER BY b.created_at DESC
 ");
-$myBookings->bind_param("i", $student_id);
-$myBookings->execute();
-$bookings = $myBookings->get_result();
+$bk->bind_param("i", $tutor_id);
+$bk->execute();
+$bookings = $bk->get_result()->fetch_all(MYSQLI_ASSOC);
+$bk->close();
 ?>
 
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+<script src="https://cdn.tailwindcss.com"></script>
 
 <div class="flex h-screen overflow-hidden bg-gray-50">
-    <?php include './includes/student_sidebar.php'; ?>
+    <?php include './includes/tutor_sidebar.php'; ?>
 
     <div class="flex-1 flex flex-col overflow-auto">
-        <?php include './includes/student_header.php'; ?>
+        <?php include './includes/tutor_header.php'; ?>
 
-        <main class="p-6 space-y-6">
+        <main class="p-6 space-y-8">
+            <header>
+                <h1 class="text-3xl font-bold text-slate-800">Tutor Panel</h1>
+                <p class="text-slate-500">Manage your teaching schedule and student bookings.</p>
+            </header>
 
-            <?php if (isset($_SESSION['msg'])): ?>
-                <div class="alert alert-<?php echo $_SESSION['msg']['type']; ?> alert-dismissible fade show">
-                    <?php echo $_SESSION['msg']['text']; ?>
-                    <button class="btn-close" data-bs-dismiss="alert"></button>
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+
+                <!-- LEFT COLUMN -->
+                <div class="lg:col-span-1 space-y-6">
+
+                    <!-- ADD AVAILABILITY -->
+                    <section class="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
+                        <h2 class="text-lg font-bold mb-4 flex items-center text-indigo-600">
+                            <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2"
+                                      d="M12 6v6m0 0v6m0-6h6m-6 0H6"/>
+                            </svg>
+                            Add Availability
+                        </h2>
+
+                        <form method="POST" class="space-y-4">
+                            <input type="hidden" name="action" value="add_slot">
+
+                            <div>
+                                <label class="block text-xs font-bold text-slate-500 uppercase mb-1">Date</label>
+                                <input required type="date" name="date"
+                                       class="w-full px-4 py-2 border rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"/>
+                            </div>
+
+                            <div class="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label class="block text-xs font-bold text-slate-500 uppercase mb-1">Start Time</label>
+                                    <input required type="time" name="start_time"
+                                           class="w-full px-4 py-2 border rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"/>
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-bold text-slate-500 uppercase mb-1">End Time</label>
+                                    <input required type="time" name="end_time"
+                                           class="w-full px-4 py-2 border rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"/>
+                                </div>
+                            </div>
+
+                            <div>
+                                <label class="block text-xs font-bold text-slate-500 uppercase mb-1">Session Mode</label>
+                                <select name="mode" required
+                                        class="w-full px-4 py-2 border rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none">
+                                    <option value="online">Online</option>
+                                    <option value="face_to_face">Face to Face</option>
+                                    <option value="both">Both</option>
+                                </select>
+                            </div>
+
+                            <button class="w-full bg-indigo-600 text-white font-semibold py-3 rounded-xl hover:bg-indigo-700 transition-colors shadow-lg shadow-indigo-100">
+                                Add Slot
+                            </button>
+                        </form>
+                    </section>
+
+                    <!-- STATS -->
+                    <section class="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
+                        <h2 class="text-lg font-bold mb-4">My Stats</h2>
+                        <div class="grid grid-cols-2 gap-4">
+                            <div class="bg-slate-50 p-4 rounded-xl">
+                                <p class="text-2xl font-bold text-indigo-600"><?php echo count($slots); ?></p>
+                                <p class="text-xs text-slate-500 uppercase font-medium">Total Slots</p>
+                            </div>
+                            <div class="bg-slate-50 p-4 rounded-xl">
+                                <p class="text-2xl font-bold text-green-600"><?php echo count($bookings); ?></p>
+                                <p class="text-xs text-slate-500 uppercase font-medium">Bookings</p>
+                            </div>
+                        </div>
+                    </section>
+
                 </div>
-                <?php unset($_SESSION['msg']); ?>
-            <?php endif; ?>
 
-            <!-- KPI CARDS (ONE LINE FLEX WITH ICONS) -->
-            <div class="flex flex-wrap gap-4">
-                <!-- TOTAL BOOKINGS -->
-                <div class="flex-1 min-w-[220px] bg-white rounded-xl border border-slate-200 shadow-sm p-4">
-                    <div class="flex justify-between items-center">
-                        <div>
-                            <p class="text-xs text-slate-500 font-bold uppercase">Total Bookings</p>
-                            <h3 class="text-2xl font-extrabold text-slate-900 mt-1">
-                                <?php echo $stats['total']; ?>
-                            </h3>
-                        </div>
-                        <div class="text-slate-300">
-                            <i class="bi bi-calendar-check text-3xl"></i>
-                        </div>
-                    </div>
-                </div>
+                <!-- RIGHT COLUMN -->
+                <div class="lg:col-span-2 space-y-6">
 
-                <!-- PENDING -->
-                <div class="flex-1 min-w-[220px] bg-white rounded-xl border border-slate-200 shadow-sm p-4">
-                    <div class="flex justify-between items-center">
-                        <div>
-                            <p class="text-xs text-slate-500 font-bold uppercase">Pending</p>
-                            <h3 class="text-2xl font-extrabold text-yellow-600 mt-1">
-                                <?php echo $stats['pending']; ?>
-                            </h3>
-                        </div>
-                        <div class="text-yellow-300">
-                            <i class="bi bi-hourglass-split text-3xl"></i>
-                        </div>
-                    </div>
-                </div>
+                    <!-- UPCOMING BOOKINGS -->
+                    <section>
+                        <h2 class="text-xl font-bold mb-4">Upcoming Student Bookings</h2>
 
-                <!-- COMPLETED -->
-                <div class="flex-1 min-w-[220px] bg-white rounded-xl border border-slate-200 shadow-sm p-4">
-                    <div class="flex justify-between items-center">
-                        <div>
-                            <p class="text-xs text-slate-500 font-bold uppercase">Completed</p>
-                            <h3 class="text-2xl font-extrabold text-green-600 mt-1">
-                                <?php echo $stats['completed']; ?>
-                            </h3>
-                        </div>
-                        <div class="text-green-300">
-                            <i class="bi bi-check-circle-fill text-3xl"></i>
-                        </div>
-                    </div>
-                </div>
-
-            </div>
-
-
-            <!-- AVAILABLE TUTORS -->
-            <div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-                <div class="px-6 py-4 border-b border-slate-100 bg-slate-50/30">
-                    <h5 class="text-lg font-extrabold text-slate-900 flex items-center gap-2">
-                        <i class="bi bi-people"></i> Available Tutors
-                    </h5>
-                    <p class="text-sm text-slate-500 mt-1">Browse tutors and book sessions</p>
-                </div>
-
-                <div class="p-6">
-                    <?php
-                    $grouped = [];
-                    while ($t = $tutors->fetch_assoc()) {
-                        $grouped[$t['tutor_name'].'|'.$t['subject']][] = $t;
-                    }
-                    ?>
-
-                    <?php if (empty($grouped)): ?>
-                        <div class="text-center py-20 text-slate-500">
-                            <i class="bi bi-person-x text-4xl mb-3"></i>
-                            <p>No tutors available right now. Check back later!</p>
-                        </div>
-                    <?php else: ?>
-                        <div class="row g-4">
-                            <?php foreach ($grouped as $key => $scheds):
-                                [$tutorName, $subject] = explode('|', $key);
-                            ?>
-                                <div class="col-md-6 col-lg-4">
-                                    <div class="border rounded-xl p-4">
-                                        <div class="flex items-center gap-3 mb-3">
-                                            <div class="h-10 w-10 rounded-full bg-slate-900 text-white flex items-center justify-center font-bold text-xs">
-                                                <?php echo getInitials($tutorName); ?>
-                                            </div>
-                                            <div>
-                                                <p class="text-sm font-bold text-slate-900"><?php echo htmlspecialchars($tutorName); ?></p>
-                                                <p class="text-xs text-slate-500"><?php echo htmlspecialchars($subject ?? 'General'); ?></p>
-                                            </div>
+                        <?php if (empty($bookings)): ?>
+                            <div class="bg-white p-12 rounded-2xl border border-dashed text-center text-slate-400">
+                                No students have booked your sessions yet.
+                            </div>
+                        <?php else: ?>
+                            <div class="space-y-3">
+                                <?php foreach ($bookings as $booking): ?>
+                                    <div class="bg-white p-4 rounded-xl border border-slate-200 flex justify-between items-center">
+                                        <div>
+                                            <p class="font-bold text-slate-800">
+                                                <?php echo htmlspecialchars($booking['first_name'] . ' ' . $booking['last_name']); ?>
+                                            </p>
+                                            <p class="text-xs text-slate-500">
+                                                Status: <?php echo ucfirst($booking['status']); ?>
+                                            </p>
+                                            <p class="text-xs text-slate-400">
+                                                Mode: <?php echo ucfirst(str_replace('_',' ', $booking['tutor_mode'] ?? 'online')); ?>
+                                            </p>
+                                            <p class="text-xs text-gray-500 mt-1">
+                                                Date: <?php echo date('l, F j, Y', strtotime($booking['available_day'])); ?><br>
+                                                Time: <?php echo date('g:i A', strtotime($booking['start_time'])) . ' - ' . date('g:i A', strtotime($booking['end_time'])); ?>
+                                            </p>
                                         </div>
 
-                                        <?php foreach ($scheds as $s): ?>
-                                            <div class="flex justify-between items-center py-2">
-                                                <div class="text-xs text-slate-600">
-                                                    <span class="font-bold"><?php echo $s['available_day']; ?></span><br>
-                                                    <?php echo date('g:i A', strtotime($s['start_time'])) . ' - ' . date('g:i A', strtotime($s['end_time'])); ?>
-                                                </div>
-                                                <button class="btn btn-sm btn-success"
-                                                        data-bs-toggle="modal"
-                                                        data-bs-target="#book<?php echo $s['id']; ?>">
-                                                    Book
-                                                </button>
-                                            </div>
-
-                                            <div class="modal fade" id="book<?php echo $s['id']; ?>">
-                                                <div class="modal-dialog">
-                                                    <form method="POST" class="modal-content">
-                                                        <div class="modal-header">
-                                                            <h5 class="modal-title">Book Session</h5>
-                                                            <button class="btn-close" data-bs-dismiss="modal"></button>
-                                                        </div>
-                                                        <div class="modal-body">
-                                                            <input type="hidden" name="action" value="book">
-                                                            <input type="hidden" name="schedule_id" value="<?php echo $s['id']; ?>">
-                                                            <textarea class="form-control" name="notes" placeholder="Optional notes"></textarea>
-                                                        </div>
-                                                        <div class="modal-footer">
-                                                            <button class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                                                            <button class="btn btn-success">Confirm</button>
-                                                        </div>
-                                                    </form>
-                                                </div>
-                                            </div>
-                                        <?php endforeach; ?>
-                                    </div>
-                                </div>
-                            <?php endforeach; ?>
-                        </div>
-                    <?php endif; ?>
-                </div>
-            </div>
-
-            <!-- MY BOOKINGS -->
-            <div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-                <div class="px-6 py-4 border-b border-slate-100 bg-slate-50/30">
-                    <h5 class="text-lg font-extrabold text-slate-900 flex items-center gap-2">
-                        <i class="bi bi-journal-bookmark"></i> My Bookings
-                    </h5>
-                    <p class="text-sm text-slate-500 mt-1">View and manage your sessions</p>
-                </div>
-
-                <?php if ($bookings->num_rows > 0): ?>
-                    <div class="overflow-x-auto">
-                        <table class="w-full border-collapse">
-                            <thead class="bg-slate-50/80 border-b border-slate-100">
-                                <tr>
-                                    <?php foreach (['Tutor','Subject','Day','Time','Status','Action'] as $h): ?>
-                                        <th class="px-6 py-3 text-[10px] font-extrabold text-slate-400 uppercase tracking-widest">
-                                            <?php echo $h; ?>
-                                        </th>
-                                    <?php endforeach; ?>
-                                </tr>
-                            </thead>
-                            <tbody class="divide-y divide-slate-100">
-                                <?php while ($b = $bookings->fetch_assoc()): ?>
-                                    <tr class="hover:bg-slate-50">
-                                        <td class="px-6 py-4 font-bold text-sm"><?php echo htmlspecialchars($b['tutor_name']); ?></td>
-                                        <td class="px-6 py-4 text-sm"><?php echo htmlspecialchars($b['subject'] ?? 'General'); ?></td>
-                                        <td class="px-6 py-4 text-sm"><?php echo $b['available_day']; ?></td>
-                                        <td class="px-6 py-4 text-sm">
-                                            <?php echo date('g:i A', strtotime($b['start_time'])) . ' - ' . date('g:i A', strtotime($b['end_time'])); ?>
-                                        </td>
-                                        <td class="px-6 py-4">
-                                            <span class="inline-flex px-2.5 py-1 rounded-full text-[10px] font-extrabold uppercase
-                                            <?php echo match($b['status']) {
-                                                'pending' => 'bg-yellow-100 text-yellow-700',
-                                                'confirmed' => 'bg-green-100 text-green-700',
-                                                'cancelled' => 'bg-red-100 text-red-700',
-                                                default => 'bg-slate-200 text-slate-600'
-                                            }; ?>">
-                                                <?php echo ucfirst($b['status']); ?>
-                                            </span>
-                                        </td>
-                                        <td class="px-6 py-4">
-                                            <?php if ($b['status'] === 'pending'): ?>
-                                                <form method="POST" onsubmit="return confirm('Cancel booking?')">
-                                                    <input type="hidden" name="action" value="cancel">
-                                                    <input type="hidden" name="booking_id" value="<?php echo $b['id']; ?>">
-                                                    <button class="btn btn-sm btn-outline-danger">Cancel</button>
+                                        <?php if($booking['status']==='pending'): ?>
+                                            <div class="flex gap-2">
+                                                <form method="POST" class="inline">
+                                                    <input type="hidden" name="action" value="update_booking">
+                                                    <input type="hidden" name="booking_id" value="<?php echo $booking['id']; ?>">
+                                                    <input type="hidden" name="status" value="accepted">
+                                                    <button type="submit" class="px-3 py-1.5 text-xs font-semibold bg-green-600 text-white rounded-lg hover:bg-green-700 transition">
+                                                        Accept
+                                                    </button>
                                                 </form>
-                                            <?php else: ?>
-                                                <span class="text-slate-400">—</span>
-                                            <?php endif; ?>
-                                        </td>
-                                    </tr>
-                                <?php endwhile; ?>
-                            </tbody>
-                        </table>
-                    </div>
-                <?php else: ?>
-                    <div class="text-center py-20 text-slate-500">
-                        <i class="bi bi-bookmark text-4xl mb-3"></i>
-                        <p>No bookings yet. Browse tutors above to book a session!</p>
-                    </div>
-                <?php endif; ?>
-            </div>
 
+                                                <form method="POST" class="inline">
+                                                    <input type="hidden" name="action" value="update_booking">
+                                                    <input type="hidden" name="booking_id" value="<?php echo $booking['id']; ?>">
+                                                    <input type="hidden" name="status" value="declined">
+                                                    <button type="submit" class="px-3 py-1.5 text-xs font-semibold bg-red-600 text-white rounded-lg hover:bg-red-700 transition">
+                                                        Decline
+                                                    </button>
+                                                </form>
+                                            </div>
+                                        <?php endif; ?>
+                                    </div>
+                                <?php endforeach; ?>
+                            </div>
+                        <?php endif; ?>
+                    </section>
+
+                    <!-- MY SLOTS -->
+                    <section>
+                        <h2 class="text-xl font-bold mb-4">My Availability Slots</h2>
+
+                        <?php if (empty($slots)): ?>
+                            <div class="bg-white p-12 rounded-2xl border border-dashed text-center text-slate-400">
+                                You have not added any availability slots yet.
+                            </div>
+                        <?php else: ?>
+                            <div class="space-y-3">
+                                <?php foreach ($slots as $slot): ?>
+                                    <div class="bg-white p-4 rounded-xl border border-slate-200 flex justify-between items-center">
+                                        <div>
+                                            <p class="font-bold text-slate-800">
+                                                <?php echo date('l, F j, Y', strtotime($slot['available_day'])); ?>
+                                            </p>
+                                            <p class="text-xs text-slate-500">
+                                                <?php echo date('g:i A', strtotime($slot['start_time'])) . ' - ' . date('g:i A', strtotime($slot['end_time'])); ?>
+                                            </p>
+                                            <p class="text-xs text-slate-400">
+                                                Mode: <?php echo ucfirst(str_replace('_',' ', $slot['mode'] ?? 'online')); ?>
+                                            </p>
+                                        </div>
+
+                                        <form method="POST">
+                                            <input type="hidden" name="action" value="cancel_slot">
+                                            <input type="hidden" name="slot_id" value="<?php echo $slot['id']; ?>">
+                                            <button class="text-red-600 font-semibold hover:underline">
+                                                Cancel
+                                            </button>
+                                        </form>
+                                    </div>
+                                <?php endforeach; ?>
+                            </div>
+                        <?php endif; ?>
+                    </section>
+
+                </div>
+            </div>
         </main>
     </div>
 </div>
